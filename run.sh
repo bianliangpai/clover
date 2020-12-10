@@ -1,6 +1,7 @@
 #! /bin/bash
 
 PROGRAM_NAME="clover"
+PERFDIR="./perf_data"
 
 # trap ctrl-c and call ctrl_c()
 trap ctrl_c INT
@@ -17,32 +18,37 @@ function clear_intermediate_output() {
 
 function stop_previous_program() {
     # make sure pidof command returns only one value
-    while [[ $(ps -a | grep ${PROGRAM_NAME}) ]]; do
+    while [[ $( pidof ${PROGRAM_NAME} ) ]]; do
         pkill ${PROGRAM_NAME}
         printf "Note: killing previous ${PROGRAM_NAME} program\n"
     done
     printf "\n"
 }
 
-function ctrl_c() {
-    stop_previous_program
-    clear_intermediate_output
-    exit 1
+function show_profiling_result() {
+    sudo chmod a+r perf.data
+    if [ ! -d ${PERFDIR} ]; then
+        mkdir ${PERFDIR}
+    fi
+    perf script > ${PERFDIR}/out.perf
+    stackcollapse-perf.pl ${PERFDIR}/out.perf > ${PERFDIR}/out.folded
+    flamegraph.pl ${PERFDIR}/out.folded > ${PERFDIR}/user.svg
+    sensible-browser ${PERFDIR}/user.svg
 }
 
 function profiling_and_show_result() {
     # use perf to profiling this program and show the result
     # 'perf record' will always output 'perf.data'
-    PERFDIR=$1
     PID=$( pidof ${PROGRAM_NAME} )
-    sudo perf record -F 99 -p ${PID}
-    sudo chmod a+r perf.data
-    if [ ! -d ${PERFDIR} ]; then
-        mkdir ${PERFDIR}
-    fi
-    perf report > ${PERFDIR}/out.perf
-    flamegraph.pl ${PERFDIR}/out.perf > ${PERFDIR}/user.svg
-    sensible-browser ${PERFDIR}/user.svg
+    sudo perf record -F 99 -p ${PID} -g
+    show_profiling_result
+}
+
+function ctrl_c() {
+    stop_previous_program
+    show_profiling_result
+    clear_intermediate_output
+    exit 1
 }
 
 main() {
@@ -53,7 +59,7 @@ main() {
     SRC3="Zmays_promoters_1k_nogenepre.fa"
     CMD="${EXE} ${PARAM} ${SRC1} ${SRC2} ${SRC3}"
 
-    if [ $1 == "perf" ]; then
+    if [ $1 == "prof" ]; then
         printf "\nPlease check your Flamegraph installation and add installationDir to PATH!\n"
         printf "https://github.com/brendangregg/FlameGraph"
         printf "\n\nPlease make sure your default browser support svg format!\n\n"
@@ -67,7 +73,7 @@ main() {
         ${CMD} &
         printf "Program output:\n"
 
-        profiling_and_show_result "./perf_data"
+        profiling_and_show_result
 
         clear_intermediate_output
 
